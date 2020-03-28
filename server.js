@@ -9,12 +9,11 @@ let latesturl = "unknown";
 let jsonresponse = {};
 let downloadcount = 0;
 const request = require("request");
+const bodyParser = require("body-parser");
 
 const GithubRepo = "GewoonJaap/ZBLauncherDownload";
 
 UpdateReleases();
-
-const interval = setInterval(UpdateReleases, 60000);
 
 function UpdateReleases() {
   console.log("Updaten van launcher versie....");
@@ -50,7 +49,26 @@ function UpdateReleases() {
 
 // make all the files in 'public' available
 // https://expressjs.com/en/starter/static-files.html
+app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.static("public"));
+app.use(bodyParser.json());
+let jsonParser = bodyParser.json();
+let urlencodedParser = bodyParser.urlencoded({ extended: false });
+app.use(bodyParser.json({ type: "application/*+json" }));
+const rateLimit = require("express-rate-limit");
+const apiLimiterWebhook = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  message: "Too many requests, please calm down :P"
+});
+const apiLimiterGlobal = rateLimit({
+  windowMs: 60 * 1000, // 1 minutes
+  max: 10,
+  message: "Too many requests, please calm down ;)"
+});
+app.use("/download", apiLimiterGlobal);
+app.use("/version", apiLimiterGlobal);
+app.use("/webhook", apiLimiterWebhook);
 
 // https://expressjs.com/en/starter/basic-routing.html
 app.get("/download", (request, response) => {
@@ -60,6 +78,23 @@ app.get("/", (request, response) => {
   response.send(
     "Beschikbare URL's:<br>/version om de laatste versie info te zien.<br>/download om de laatste versie te downloaden"
   );
+});
+app.post("/webhook", (request, response) => {
+  let json = request.body;
+  console.log("Got a webhook!");
+  try {
+    console.log(JSON.stringify(request.body));
+    if (json.repository.full_name == GithubRepo) {
+      UpdateReleases();
+      response.send("Got it!");
+    } else {
+      console.log(json.hook.config.secret);
+      console.log("Invalid Repo name!");
+      response.send("Invalid Repo Name!");
+    }
+  } catch (error) {
+    response.send("Cannot POST /webhook");
+  }
 });
 app.get("/version", (request, response) => {
   let json = {
